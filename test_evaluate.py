@@ -58,14 +58,13 @@ class EvaluatorCLITest(unittest.TestCase):
             "worktree",
             "add",
             "-b",
-            "autoresearch/test",
+            "lxloop/test",
             str(self.worktree),
             cwd=self.subject,
         )
 
         self.tool.mkdir()
-        if EVALUATOR.exists():
-            shutil.copy(EVALUATOR, self.tool / "evaluate.py")
+        shutil.copy(EVALUATOR, self.tool / "evaluate.py")
         self.fake_bin.mkdir()
         self._write_fake_commands()
         self._write_build_command()
@@ -622,7 +621,7 @@ class EvaluatorCLITest(unittest.TestCase):
         self.assertFalse(self.command_log.exists())
 
     def test_main_checkout_is_rejected_even_with_research_branch_name(self) -> None:
-        run("git", "switch", "-c", "autoresearch/not-a-worktree", cwd=self.subject)
+        run("git", "switch", "-c", "lxloop/not-a-worktree", cwd=self.subject)
         self._write_config(LLAMA_DIR=str(self.subject))
 
         result = self.evaluate()

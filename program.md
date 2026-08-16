@@ -15,7 +15,7 @@ Code that merely looks faster is not a result.
   a research run.
 - The evaluator enforces the source boundary mechanically. It is protection against
   accidental or malformed edits, not an adversarial security sandbox.
-- Work only on the `autoresearch/*` branch in the dedicated, initially clean
+- Work only on the `lxloop/*` branch in the dedicated, initially clean
   subject worktree named by `config.py`.
 - Keep the target exclusively reserved for this research run.
 
@@ -23,13 +23,12 @@ Inside `ggml-cpu`, use the breadth justified by `task.md`. You may substantially
 change implementations, use RISC-V intrinsics, or add files there when the
 hypothesis requires it. Do not restructure code without a measured reason.
 
-## Hardware context
+## Run context
 
-The target is proprietary 64-core RISC-V hardware with a 1024-byte vector length.
-Four additional accelerator components and their operating-system coordination
-exist, but that architecture is outside this research run. RISC-V vector
-intrinsics are promising, not mandatory. The current internal implementation is
-already roughly 10× faster than its original baseline.
+Treat `task.md` as the authority for the current research scope, metric priority,
+hardware facts, environment facts, and constraints. Re-read it after context
+compaction and before broadening a hypothesis. It is private local state; keep
+identifying hardware and organization details out of tracked lxloop files.
 
 The target has no compiler and no Internet access. Cross-compilation, research
 logic, parsing, and logs stay on the workstation. The target only receives a
@@ -41,7 +40,7 @@ prepared deploy directory and executes correctness and benchmark commands.
    and constraints.
 2. Read the relevant in-scope source and the recent Git history.
 3. Confirm the subject checkout is clean, is a linked worktree, and is on the
-   intended `autoresearch/<tag>` branch based on the configured immutable upstream
+   intended `lxloop/<tag>` branch based on the configured immutable upstream
    commit. `UPSTREAM_REF` must be the full commit ID, not a movable branch or tag.
 4. Run `python3 evaluate.py` before changing source. This untouched baseline is
    also the end-to-end smoke test for the cross-toolchain, deployment, target
