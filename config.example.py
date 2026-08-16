@@ -25,7 +25,7 @@ cmake --install build-riscv --prefix "$PWD/build-riscv/lxloop-deploy"
 # Absolute, or relative to LLAMA_DIR. evaluate.py transfers its contents opaquely.
 DEPLOY_DIR = "build-riscv/lxloop-deploy"
 
-# Optional; output is captured in each evaluation's metadata log.
+# Required; output is captured in each evaluation's metadata log.
 COMPILER_VERSION_CMD = "riscv64-unknown-linux-gnu-g++ --version"
 
 # Run on the target with REMOTE_DIR as the working directory.

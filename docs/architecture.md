@@ -67,7 +67,7 @@ Keeping the direction on disk allows an agent to reread it after context compact
 
 1. checks that the subject checkout is a dedicated, clean experiment worktree on an `autoresearch/*` branch;
 2. rejects tracked or untracked candidate changes outside `ggml/src/ggml-cpu/`;
-3. runs the configured cross-compilation command on the workstation;
+3. clears the lxloop-owned deploy directory and runs the configured cross-compilation command on the workstation;
 4. verifies that the command produced the configured deploy directory;
 5. safely replaces the dedicated remote candidate directory;
 6. transfers the deploy directory with `rsync`, or with `scp -r` when `rsync` is unavailable locally or remotely;
@@ -100,12 +100,12 @@ An engineer copies committed `config.example.py` to gitignored `config.py`. Plai
 - subject worktree path and upstream baseline ref;
 - SSH target and dedicated remote directory;
 - local cross-compilation command and deploy-directory path;
-- optional compiler-version command;
+- compiler-version command;
 - remote correctness and `llama-bench` commands;
 - model and benchmark parameters embedded in those commands;
 - per-phase timeouts.
 
-The build command is opaque to lxloop. Changing compiler flags, toolchain files, native versus containerized invocation, or the exact set of staged artifacts must not change the research loop.
+The build command is opaque to lxloop. It must recreate `DEPLOY_DIR`; lxloop marks ownership beside a produced directory and clears that owned directory before the next build, so a failed build cannot leave a stale payload for a later experiment. Ownership metadata is not added to the opaque payload, and an existing unmarked directory is never deleted automatically. Changing compiler flags, toolchain files, native versus containerized invocation, or the exact set of staged artifacts must not change the research loop.
 
 Before deleting remote contents for an SCP deployment, `evaluate.py` validates that the configured path is an absolute, non-root, dedicated candidate directory. It removes only that exact path. `rsync` uses deletion semantics so removed local artifacts cannot survive remotely; the SCP fallback recreates the directory before its full upload for the same reason.
 

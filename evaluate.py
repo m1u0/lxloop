@@ -11,6 +11,7 @@ import math
 import os
 from pathlib import Path, PurePosixPath
 import re
+import secrets
 import signal
 import shlex
 import shutil
@@ -78,13 +79,17 @@ class Evaluator:
             ) from error
 
         self.record_build_metadata()
-        self.run_local_command(
-            self.settings.build_cmd,
-            phase="build",
-            timeout=self.timeout("build"),
-            failure_status="build_failed",
-            exit_code=4,
-        )
+        self.prepare_deploy_dir()
+        try:
+            self.run_local_command(
+                self.settings.build_cmd,
+                phase="build",
+                timeout=self.timeout("build"),
+                failure_status="build_failed",
+                exit_code=4,
+            )
+        finally:
+            self.mark_deploy_dir_if_present()
         self.validate_deploy_dir()
         self.deploy()
         self.run_remote_command(
@@ -293,8 +298,17 @@ class Evaluator:
         exit_code: int,
     ) -> subprocess.CompletedProcess[str]:
         remote = shlex.quote(self.settings.remote_dir)
-        args = ["ssh", self.settings.target, f"cd {remote} && {command}"]
-        last_reason = f"SSH exited with status 255 while running {phase}"
+        sentinel = f"__LXLOOP_REMOTE_EXIT_{secrets.token_hex(8)}__:"
+        remote_command = (
+            f"(cd {remote} && /bin/sh -c {shlex.quote(command)}); "
+            "lxloop_status=$?; "
+            f"printf '\\n{sentinel}%s\\n' \"$lxloop_status\" >&2; exit 0"
+        )
+        args = ["ssh", self.settings.target, remote_command]
+        sentinel_pattern = re.compile(
+            rf"(?m)^{re.escape(sentinel)}([0-9]+)\r?$"
+        )
+        last_reason = f"SSH did not return a remote status while running {phase}"
         for attempt in (1, 2):
             try:
                 result = self.run_external(
@@ -310,8 +324,20 @@ class Evaluator:
                     last_reason = error.reason
                     continue
                 raise
-            if result.returncode == 0:
+            if result.returncode != 0:
+                last_reason = f"SSH exited with status {result.returncode} while running {phase}"
+                continue
+            matches = sentinel_pattern.findall(result.stderr)
+            if len(matches) != 1:
+                last_reason = f"SSH returned no unambiguous remote status while running {phase}"
+                continue
+            remote_status = int(matches[0])
+            if remote_status == 0:
                 return result
+            status, reason = classify_remote_failure(
+                phase, remote_status, failure_status
+            )
+            raise EvaluationFailure(status, reason, exit_code)
         raise EvaluationFailure(
             "infrastructure_failed",
             f"SSH failed twice while running {phase}: {last_reason}",
@@ -394,29 +420,59 @@ class Evaluator:
                 4,
             )
 
+    def prepare_deploy_dir(self) -> None:
+        directory = self.settings.deploy_dir
+        marker = directory.with_name(f".{directory.name}.lxloop-owned")
+        try:
+            if directory.exists():
+                if not directory.is_dir() or directory.is_symlink():
+                    raise EvaluationFailure(
+                        "config_error", "DEPLOY_DIR must be a real directory", 2
+                    )
+                if not marker.is_file():
+                    raise EvaluationFailure(
+                        "config_error",
+                        "refusing to clear DEPLOY_DIR because lxloop does not own it",
+                        2,
+                    )
+                shutil.rmtree(directory)
+            marker.unlink(missing_ok=True)
+        except OSError as error:
+            raise EvaluationFailure(
+                "build_failed", f"could not prepare DEPLOY_DIR: {error}", 4
+            ) from error
+
+    def mark_deploy_dir_if_present(self) -> None:
+        directory = self.settings.deploy_dir
+        if not directory.is_dir():
+            return
+        try:
+            directory.with_name(f".{directory.name}.lxloop-owned").touch()
+        except OSError as error:
+            raise EvaluationFailure(
+                "build_failed", f"could not mark DEPLOY_DIR as owned: {error}", 4
+            ) from error
+
     def record_build_metadata(self) -> None:
         lines = [f"build_command: {self.settings.build_cmd}\n"]
-        command = self.settings.compiler_version_cmd
-        if command:
-            try:
-                result = subprocess.run(
-                    ["/bin/sh", "-c", command],
-                    cwd=self.settings.llama_dir,
-                    capture_output=True,
-                    text=True,
-                    errors="replace",
-                    timeout=self.timeout("build"),
-                )
-                lines.extend(
-                    [
-                        f"compiler_version_exit: {result.returncode}\n",
-                        result.stdout,
-                        result.stderr,
-                    ]
-                )
-            except (OSError, subprocess.TimeoutExpired) as error:
-                lines.append(f"compiler_version_error: {error}\n")
-        self.log_path("metadata").write_text("".join(lines))
+        result = self.run_local_command(
+            self.settings.compiler_version_cmd,
+            phase="compiler-version",
+            timeout=self.timeout("build"),
+            failure_status="config_error",
+            exit_code=2,
+        )
+        if not (result.stdout + result.stderr).strip():
+            raise EvaluationFailure(
+                "config_error", "COMPILER_VERSION_CMD produced no output", 2
+            )
+        lines.extend(
+            [
+                result.stdout,
+                result.stderr,
+            ]
+        )
+        self.write_log(self.log_path("metadata"), "".join(lines))
 
     def write_phase_log(
         self,
@@ -436,7 +492,15 @@ class Evaluator:
             "\n--- stderr ---\n",
             stderr,
         ]
-        self.log_path(phase).write_text("".join(body))
+        self.write_log(self.log_path(phase), "".join(body))
+
+    def write_log(self, path: Path, contents: str) -> None:
+        try:
+            path.write_text(contents)
+        except OSError as error:
+            raise EvaluationFailure(
+                "log_failed", f"could not write evaluation log {path}: {error}", 2
+            ) from error
 
     def log_path(self, phase: str) -> Path:
         assert self.run_log_dir is not None
@@ -496,7 +560,7 @@ def load_settings(tool_dir: Path) -> Settings:
             remote_dir=remote_dir,
             build_cmd=str(required(module, "BUILD_CMD")),
             deploy_dir=deploy_dir,
-            compiler_version_cmd=str(getattr(module, "COMPILER_VERSION_CMD", "")),
+            compiler_version_cmd=str(required(module, "COMPILER_VERSION_CMD")),
             test_cmd=str(required(module, "TEST_CMD")),
             bench_cmd=str(required(module, "BENCH_CMD")),
             log_dir=log_dir,
@@ -540,6 +604,19 @@ def validate_remote_dir(value: str) -> None:
             "REMOTE_DIR must be a safe absolute directory at least two levels below /",
             2,
         )
+
+
+def classify_remote_failure(
+    phase: str, returncode: int, default_status: str
+) -> tuple[str, str]:
+    if returncode == 128 + signal.SIGILL:
+        return "illegal_instruction", f"{phase} terminated with an illegal instruction"
+    if 128 < returncode < 128 + signal.NSIG:
+        return (
+            f"{phase}_crashed",
+            f"{phase} terminated by signal {returncode - 128}",
+        )
+    return default_status, f"{phase} exited with status {returncode}"
 
 
 def parse_benchmark(output: str) -> tuple[Metric, Metric]:

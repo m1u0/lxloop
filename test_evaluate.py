@@ -80,6 +80,7 @@ class EvaluatorCLITest(unittest.TestCase):
         self.env["LXLOOP_BUILD_RC"] = "0"
         self.env["LXLOOP_BUILD_SLEEP"] = "0"
         self.env["LXLOOP_TEST_RC"] = "0"
+        self.env["LXLOOP_TEST_TRANSPORT_RC"] = "0"
         self.env["LXLOOP_BENCH_RC"] = "0"
         self.env["LXLOOP_BENCH_SLEEP"] = "0"
         self.env["LXLOOP_RSYNC_RC"] = "0"
@@ -114,6 +115,7 @@ class EvaluatorCLITest(unittest.TestCase):
                 #!/usr/bin/env python3
                 import os
                 from pathlib import Path
+                import re
                 import sys
 
                 name = Path(sys.argv[0]).name
@@ -131,15 +133,24 @@ class EvaluatorCLITest(unittest.TestCase):
                             raise SystemExit(int(configured))
                         raise SystemExit(0 if os.environ["LXLOOP_REMOTE_HAS_RSYNC"] == "1" else 1)
                     if "run-tests" in remote_command:
+                        transport_rc = int(os.environ["LXLOOP_TEST_TRANSPORT_RC"])
+                        if transport_rc:
+                            raise SystemExit(transport_rc)
+                        sentinel = re.search(r"__LXLOOP_REMOTE_EXIT_[0-9a-f]+__:", remote_command)
+                        assert sentinel is not None
                         print("correctness output")
+                        print(sentinel.group() + os.environ["LXLOOP_TEST_RC"], file=sys.stderr)
                         if os.environ["LXLOOP_DELETE_SSH_AFTER_TEST"] == "1":
                             Path(sys.argv[0]).unlink()
-                        raise SystemExit(int(os.environ["LXLOOP_TEST_RC"]))
+                        raise SystemExit(0)
                     if "run-bench" in remote_command:
+                        sentinel = re.search(r"__LXLOOP_REMOTE_EXIT_[0-9a-f]+__:", remote_command)
+                        assert sentinel is not None
                         import time
                         time.sleep(float(os.environ["LXLOOP_BENCH_SLEEP"]))
                         print(os.environ["LXLOOP_BENCH_JSON"])
-                        raise SystemExit(int(os.environ["LXLOOP_BENCH_RC"]))
+                        print(sentinel.group() + os.environ["LXLOOP_BENCH_RC"], file=sys.stderr)
+                        raise SystemExit(0)
                     if os.environ["LXLOOP_DELETE_SSH_AFTER_PREP"] == "1":
                         Path(sys.argv[0]).unlink()
                     raise SystemExit(int(os.environ["LXLOOP_SSH_RC"]))
@@ -199,7 +210,9 @@ class EvaluatorCLITest(unittest.TestCase):
             "REMOTE_DIR": "/srv/lxloop/candidate",
             "BUILD_CMD": self.build_command,
             "DEPLOY_DIR": str(self.deploy_dir),
-            "COMPILER_VERSION_CMD": "",
+            "COMPILER_VERSION_CMD": shlex.quote(sys.executable)
+            + " -c "
+            + shlex.quote("print('test compiler 1.0')"),
             "TEST_CMD": "run-tests",
             "BENCH_CMD": "run-bench",
             "LOG_DIR": str(self.logs_dir),
@@ -245,8 +258,16 @@ class EvaluatorCLITest(unittest.TestCase):
         self.assertIn("ssh|riscv-board command -v rsync", commands[1])
         self.assertTrue(commands[2].startswith("ssh|riscv-board mkdir -p"))
         self.assertTrue(commands[3].startswith("rsync|-az --delete"))
-        self.assertIn("cd /srv/lxloop/candidate && run-tests", commands[4])
-        self.assertIn("cd /srv/lxloop/candidate && run-bench", commands[5])
+        self.assertIn("cd /srv/lxloop/candidate && /bin/sh -c run-tests", commands[4])
+        self.assertIn("cd /srv/lxloop/candidate && /bin/sh -c run-bench", commands[5])
+
+    def test_deploy_payload_contains_only_build_outputs(self) -> None:
+        result = self.evaluate()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            [path.name for path in self.deploy_dir.iterdir()], ["llama-bench"]
+        )
 
     def test_committed_ggml_cpu_candidate_is_evaluated(self) -> None:
         kernel = self.worktree / "ggml" / "src" / "ggml-cpu" / "kernel.c"
@@ -269,8 +290,25 @@ class EvaluatorCLITest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         metadata = next(self.logs_dir.glob("*/metadata.log")).read_text()
-        self.assertIn("compiler_version_exit: 0", metadata)
         self.assertIn("riscv compiler 1.0", metadata)
+
+    def test_compiler_version_command_is_required(self) -> None:
+        self._write_config(omit=("COMPILER_VERSION_CMD",))
+
+        result = self.evaluate()
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("status: config_error", result.stdout)
+        self.assertIn("missing COMPILER_VERSION_CMD", result.stdout)
+
+    def test_empty_compiler_identity_is_rejected(self) -> None:
+        self._write_config(COMPILER_VERSION_CMD="true")
+
+        result = self.evaluate()
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("status: config_error", result.stdout)
+        self.assertIn("produced no output", result.stdout)
 
     def test_transfer_failure_is_retried_once_before_stopping(self) -> None:
         self.env["LXLOOP_RSYNC_RC"] = "23"
@@ -471,7 +509,7 @@ class EvaluatorCLITest(unittest.TestCase):
         self.assertFalse(any("run-bench" in line for line in commands))
 
     def test_ssh_infrastructure_failure_is_retried_then_stops(self) -> None:
-        self.env["LXLOOP_TEST_RC"] = "255"
+        self.env["LXLOOP_TEST_TRANSPORT_RC"] = "255"
 
         result = self.evaluate()
 
@@ -479,6 +517,17 @@ class EvaluatorCLITest(unittest.TestCase):
         self.assertIn("status: infrastructure_failed", result.stdout)
         commands = self.command_lines()
         self.assertEqual(sum("run-tests" in line for line in commands), 2)
+        self.assertFalse(any("run-bench" in line for line in commands))
+
+    def test_correctness_exit_255_is_a_test_failure_not_an_ssh_failure(self) -> None:
+        self.env["LXLOOP_TEST_RC"] = "255"
+
+        result = self.evaluate()
+
+        self.assertEqual(result.returncode, 6)
+        self.assertIn("status: test_failed", result.stdout)
+        commands = self.command_lines()
+        self.assertEqual(sum("run-tests" in line for line in commands), 1)
         self.assertFalse(any("run-bench" in line for line in commands))
 
     def test_malformed_benchmark_output_is_reported(self) -> None:
@@ -497,8 +546,15 @@ class EvaluatorCLITest(unittest.TestCase):
         result = self.evaluate()
 
         self.assertEqual(result.returncode, 7)
-        self.assertIn("status: bench_failed", result.stdout)
-        self.assertIn("bench exited with status 132", result.stdout)
+        self.assertIn("status: illegal_instruction", result.stdout)
+
+    def test_benchmark_signal_crash_is_distinct_from_ordinary_failure(self) -> None:
+        self.env["LXLOOP_BENCH_RC"] = "139"
+
+        result = self.evaluate()
+
+        self.assertEqual(result.returncode, 7)
+        self.assertIn("status: bench_crashed", result.stdout)
 
     def test_missing_prefill_metric_is_reported(self) -> None:
         self.env["LXLOOP_BENCH_JSON"] = json.dumps(
@@ -669,6 +725,39 @@ class EvaluatorCLITest(unittest.TestCase):
         self.assertIn("status: log_failed", result.stdout)
         self.assertNotIn("Traceback", result.stderr)
 
+    def test_metadata_log_write_failure_returns_a_stable_summary(self) -> None:
+        snippet = (
+            "from pathlib import Path; "
+            f"p=next(Path({str(self.logs_dir)!r}).iterdir())/'metadata.log'; "
+            "p.mkdir(); print('test compiler 1.0')"
+        )
+        command = f"{shlex.quote(sys.executable)} -c {shlex.quote(snippet)}"
+        self._write_config(COMPILER_VERSION_CMD=command)
+
+        result = self.evaluate()
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("status: log_failed", result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_phase_log_write_failure_returns_a_stable_summary(self) -> None:
+        snippet = (
+            "from pathlib import Path; "
+            f"logs=next(Path({str(self.logs_dir)!r}).iterdir()); "
+            "(logs/'build.log').mkdir(); "
+            f"deploy=Path({str(self.deploy_dir)!r}); "
+            "deploy.mkdir(parents=True, exist_ok=True); "
+            "(deploy/'llama-bench').write_text('binary')"
+        )
+        command = f"{shlex.quote(sys.executable)} -c {shlex.quote(snippet)}"
+        self._write_config(BUILD_CMD=command)
+
+        result = self.evaluate()
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("status: log_failed", result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+
     def test_unsafe_remote_directory_forms_are_rejected(self) -> None:
         for remote_dir in ("", "relative/path", "/tmp", "/srv/lx loop", "/srv/../tmp"):
             with self.subTest(remote_dir=remote_dir):
@@ -704,6 +793,29 @@ class EvaluatorCLITest(unittest.TestCase):
         self.assertIn("status: build_failed", result.stdout)
         self.assertIn("non-empty deploy directory", result.stdout)
         self.assertFalse(self.command_log.exists())
+
+    def test_stale_deploy_payload_is_removed_before_build(self) -> None:
+        stale_binary = self.deploy_dir / "llama-bench"
+        snippet = (
+            "from pathlib import Path; "
+            f"p=Path({str(stale_binary)!r}); "
+            "p.parent.mkdir(parents=True, exist_ok=True); "
+            "p.write_text('partial stale binary'); "
+            "raise SystemExit(1)"
+        )
+        failing_build = f"{shlex.quote(sys.executable)} -c {shlex.quote(snippet)}"
+        self._write_config(BUILD_CMD=failing_build)
+        first_result = self.evaluate()
+        self.assertEqual(first_result.returncode, 4)
+        self.assertTrue(stale_binary.exists())
+
+        self._write_config(BUILD_CMD="true")
+
+        result = self.evaluate()
+
+        self.assertEqual(result.returncode, 4)
+        self.assertIn("status: build_failed", result.stdout)
+        self.assertFalse(stale_binary.exists())
 
 
 if __name__ == "__main__":
