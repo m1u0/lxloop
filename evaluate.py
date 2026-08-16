@@ -194,10 +194,10 @@ class Evaluator:
 
     def deploy(self) -> None:
         validate_remote_dir(self.settings.remote_dir)
+        destination = f"{self.settings.target}:{self.settings.remote_dir}/"
         if shutil.which("rsync") and self.remote_has_rsync():
             self.prepare_remote_dir(recreate=False)
             source = f"{self.settings.deploy_dir}{os.sep}"
-            destination = f"{self.settings.target}:{self.settings.remote_dir}/"
             self.run_external_with_retry(
                 ["rsync", "-az", "--delete", source, destination],
                 phase="sync",
@@ -210,7 +210,6 @@ class Evaluator:
 
         self.prepare_remote_dir(recreate=True)
         source = f"{self.settings.deploy_dir}{os.sep}."
-        destination = f"{self.settings.target}:{self.settings.remote_dir}/"
         self.run_external_with_retry(
             ["scp", "-r", source, destination],
             phase="sync",
@@ -231,7 +230,7 @@ class Evaluator:
         exhausted_reason: str,
         allowed_returncodes: set[int] | None = None,
     ) -> subprocess.CompletedProcess[str]:
-        successful = allowed_returncodes or {0}
+        successful_returncodes = allowed_returncodes or {0}
         last_reason = "unknown failure"
         for attempt in (1, 2):
             try:
@@ -241,12 +240,12 @@ class Evaluator:
                     timeout=timeout,
                     failure_status=failure_status,
                     exit_code=exit_code,
-                    allowed_returncodes=successful | {255},
+                    allowed_returncodes=successful_returncodes | {255},
                 )
             except EvaluationFailure as error:
                 last_reason = error.reason
                 continue
-            if result.returncode in successful:
+            if result.returncode in successful_returncodes:
                 return result
             last_reason = f"{phase} exited with status {result.returncode}"
         raise EvaluationFailure(
@@ -519,7 +518,8 @@ def required(module: ModuleType, name: str) -> object:
 def expanded_path(
     module: ModuleType, name: str, *, relative_to: Path | None = None
 ) -> Path:
-    path = Path(os.path.expandvars(os.path.expanduser(str(required(module, name)))))
+    value = str(required(module, name))
+    path = Path(os.path.expandvars(os.path.expanduser(value)))
     if not path.is_absolute() and relative_to is not None:
         path = relative_to / path
     return path.resolve()
@@ -554,15 +554,15 @@ def parse_benchmark(output: str) -> tuple[Metric, Metric]:
         row
         for row in payload
         if isinstance(row, dict)
-        and positive_int(row.get("n_prompt"))
-        and not positive_int(row.get("n_gen"))
+        and is_positive_number(row.get("n_prompt"))
+        and not is_positive_number(row.get("n_gen"))
     ]
     decode_rows = [
         row
         for row in payload
         if isinstance(row, dict)
-        and positive_int(row.get("n_gen"))
-        and not positive_int(row.get("n_prompt"))
+        and is_positive_number(row.get("n_gen"))
+        and not is_positive_number(row.get("n_prompt"))
     ]
     if len(prefill_rows) != 1 or len(decode_rows) != 1:
         raise EvaluationFailure(
@@ -598,7 +598,7 @@ def metric_from_row(row: dict[object, object]) -> Metric:
     return Metric(mean=mean, stddev=stddev, samples=samples)
 
 
-def positive_int(value: object) -> bool:
+def is_positive_number(value: object) -> bool:
     return isinstance(value, (int, float)) and value > 0
 
 
