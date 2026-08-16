@@ -16,7 +16,6 @@ import signal
 import shlex
 import shutil
 import subprocess
-import sys
 import tempfile
 from types import ModuleType
 from typing import Sequence
@@ -128,9 +127,9 @@ class Evaluator:
                 "git_error", "subject checkout or upstream reference is invalid", 3
             ) from error
 
-        if not branch.startswith("autoresearch/"):
+        if not branch.startswith("lxloop/"):
             raise EvaluationFailure(
-                "wrong_branch", "subject checkout must be on an autoresearch/* branch", 3
+                "wrong_branch", "subject checkout must be on an lxloop/* branch", 3
             )
         if self.settings.upstream_ref.lower() != resolved_upstream.lower():
             raise EvaluationFailure(
@@ -236,7 +235,6 @@ class Evaluator:
         allowed_returncodes: set[int] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         successful_returncodes = allowed_returncodes or {0}
-        last_reason = "unknown failure"
         for attempt in (1, 2):
             try:
                 result = self.run_external(
@@ -308,7 +306,6 @@ class Evaluator:
         sentinel_pattern = re.compile(
             rf"(?m)^{re.escape(sentinel)}([0-9]+)\r?$"
         )
-        last_reason = f"SSH did not return a remote status while running {phase}"
         for attempt in (1, 2):
             try:
                 result = self.run_external(
@@ -482,8 +479,6 @@ class Evaluator:
         stderr: str,
         result: str,
     ) -> None:
-        if self.run_log_dir is None:
-            return
         body = [
             f"command: {shlex.join(args)}\n",
             f"result: {result}\n",
@@ -592,10 +587,7 @@ def expanded_path(
 def validate_remote_dir(value: str) -> None:
     path = PurePosixPath(value)
     if (
-        not value
-        or not REMOTE_PATH_PATTERN.fullmatch(value)
-        or not path.is_absolute()
-        or path == PurePosixPath("/")
+        not REMOTE_PATH_PATTERN.fullmatch(value)
         or ".." in path.parts
         or len(path.parts) < 3
     ):

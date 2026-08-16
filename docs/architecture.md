@@ -2,7 +2,7 @@
 
 ## Purpose
 
-lxloop is a minimal, standalone research repository inspired by `autoresearch`. An engineer chooses a focused optimization problem inside `llama.cpp`'s `ggml/src/ggml-cpu/`; a coding agent repeatedly proposes one change, measures it on proprietary RISC-V hardware, keeps measured improvements, and rejects everything else.
+lxloop is a minimal, standalone research repository inspired by `autoresearch`. An engineer chooses a focused optimization problem inside `llama.cpp`'s `ggml/src/ggml-cpu/`; a coding agent repeatedly proposes one change, measures it on RISC-V hardware, keeps measured improvements, and rejects everything else.
 
 The coding agent is the orchestrator. Git is the state machine. Markdown holds research policy. One fixed Python evaluator closes the workstation-to-target measurement loop. lxloop does not implement an orchestration framework around capabilities already supplied by the agent, Git, SSH, and existing `llama.cpp` tools.
 
@@ -51,7 +51,7 @@ Only three files form the runtime research system: `program.md`, `evaluate.py`, 
 - the provisional acceptance policy;
 - experiment-ledger fields;
 - failure recovery and unattended-operation rules;
-- stable hardware context, including the 1024-byte RISC-V vector length.
+- how to consume private per-run hardware and environment context from `task.md`.
 
 It is agent-agnostic. v0 is initially validated with Codex, without an agent-specific launcher or adapter.
 
@@ -65,7 +65,7 @@ Keeping the direction on disk allows an agent to reread it after context compact
 
 `evaluate.py` is a fixed, standard-library-only local program. In order, it:
 
-1. checks that the subject checkout is a dedicated, clean experiment worktree on an `autoresearch/*` branch;
+1. checks that the subject checkout is a dedicated, clean experiment worktree on an `lxloop/*` branch;
 2. rejects tracked or untracked candidate changes outside `ggml/src/ggml-cpu/`;
 3. clears the lxloop-owned deploy directory and runs the configured cross-compilation command on the workstation;
 4. verifies that the command produced the configured deploy directory;
@@ -163,7 +163,7 @@ This policy prevents tiny fluctuations from advancing the branch without pretend
 
 ## Git workflow and edit boundary
 
-Each research run uses a dedicated clean worktree and an `autoresearch/<tag>` branch created from the configured upstream baseline. The evaluator refuses a dirty starting state. It compares the branch and working-tree state against the run base and permits changes only under:
+Each research run uses a dedicated clean worktree and an `lxloop/<tag>` branch created from the configured upstream baseline. The evaluator refuses a dirty starting state. It compares the branch and working-tree state against the run base and permits changes only under:
 
 ```text
 ggml/src/ggml-cpu/
@@ -209,7 +209,7 @@ This is intentionally not a general distributed fault-tolerance system.
 
 v0 does not include multiple agents, board scheduling, a database, dashboard, service, daemon, queue, deployment framework, toolchain manager, benchmark framework, experiment DSL, plugin system, hardware-counter analysis, autonomous target selection, or advanced statistical inference.
 
-The exact compiler and flags, thermal and DVFS behavior, benchmark noise model, correctness suite, model, quantization, benchmark parameters, and accelerator capabilities remain environment knowledge rather than new infrastructure.
+The exact compiler and flags, thermal and DVFS behavior, benchmark noise model, correctness suite, model, quantization, benchmark parameters, and target-specific capabilities remain environment knowledge rather than new infrastructure. Identifying hardware and organization details belong only in the gitignored `task.md`, never in tracked lxloop files.
 
 Future changes should land in one of three existing seams:
 

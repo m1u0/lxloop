@@ -49,5 +49,5 @@ The complete workstation-produced payload transferred to the target for correctn
 _Avoid_: Build tree, source checkout
 
 **Target**:
-The proprietary RISC-V machine on which candidate correctness and inference performance are measured.
+The RISC-V machine on which candidate correctness and inference performance are measured.
 _Avoid_: Build server, worker

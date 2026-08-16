@@ -1,8 +1,8 @@
 """Copy this file to config.py and replace every example value."""
 
 # Dedicated linked llama.cpp worktree used only for this research run.
-LLAMA_DIR = "/path/to/llama.cpp-autoresearch"
-# Resolve the desired company branch or tag once, then paste its full commit ID.
+LLAMA_DIR = "/path/to/llama.cpp-lxloop"
+# Resolve the desired baseline branch or tag once, then paste its full commit ID.
 # A movable branch name is rejected so an overnight run cannot change baselines.
 UPSTREAM_REF = "0123456789abcdef0123456789abcdef01234567"
 
