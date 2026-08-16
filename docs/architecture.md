@@ -27,7 +27,7 @@ lxloop/
 
 # Created locally and not committed:
 config.py                  local and target commands/paths
-task.md                    research direction for the current run
+task.md                    research direction and private run context
 results.tsv                experiment ledger
 logs/                      complete evaluator output
 
@@ -57,7 +57,7 @@ It is agent-agnostic. v0 is initially validated with Codex, without an agent-spe
 
 ### `task.md`
 
-`task.md` contains only the engineer's per-run research direction: the function, file, or area to investigate; prefill or decode priority; permitted metric trade-offs; implementation properties to preserve; and useful hypotheses. It is untracked so an engineer can rewrite it frequently without changing permanent policy.
+`task.md` contains the engineer's per-run research direction and any private hardware, environment, or organization context useful to that run. Its structure is intentionally flexible, and it remains untracked so an engineer can rewrite it frequently without changing permanent policy.
 
 Keeping the direction on disk allows an agent to reread it after context compaction during an overnight run.
 
