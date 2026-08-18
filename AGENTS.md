@@ -12,6 +12,10 @@ The canonical default triage labels are used unchanged. See `docs/agents/triage-
 
 This repository uses a single-context domain-doc layout. See `docs/agents/domain.md`.
 
+### README translations
+
+Keep `README.md` and `README.zh.md` structurally aligned. Whenever either README changes, update its counterpart in the same change.
+
 ## Cursor Cloud specific instructions
 
 lxloop is a single, zero-dependency **Python 3 (stdlib only)** project. There is no
