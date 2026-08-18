@@ -1,5 +1,7 @@
 # LXLoop
 
+English | [中文](README.zh.md)
+
 > **Note:** LXLoop is inspired by Andrej Karpathy’s [autoresearch](https://github.com/karpathy/autoresearch).
 
 LXLoop is a small, human-directed research tool for finding CPU inference-performance improvements in `llama.cpp`.
