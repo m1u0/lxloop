@@ -115,8 +115,8 @@ A successful evaluation produces a concise summary:
 ---
 status: ok
 commit: b4e2f1a
-prefill_tps: 142.310 ± 1.850 (n=5)
-decode_tps: 9.874 ± 0.041 (n=5)
+prefill_tps: 142.310 ± 1.850 (n=10)
+decode_tps: 9.874 ± 0.041 (n=10)
 log: logs/20260817T031412Z_b4e2f1a
 ```
 

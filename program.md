@@ -54,6 +54,8 @@ prepared deploy directory and executes correctness and benchmark commands.
 
 7. Record the baseline as the first row, including the configured upstream ref
    and its commit in the description.
+8. Note roughly how long that `evaluate.py` run took. Later evaluations should
+   use this duration when waiting on the command.
 
 The evaluator prints a short contract like:
 
@@ -61,8 +63,8 @@ The evaluator prints a short contract like:
 ---
 status: ok
 commit: b4e2f1a
-prefill_tps: 142.310 ± 1.850 (n=5)
-decode_tps: 9.874 ± 0.041 (n=5)
+prefill_tps: 142.310 ± 1.850 (n=10)
+decode_tps: 9.874 ± 0.041 (n=10)
 log: logs/20260817T031412Z_b4e2f1a
 ```
 
@@ -81,7 +83,10 @@ measurement impossible:
 5. Stage only `ggml/src/ggml-cpu/` and commit the candidate with a short message
    describing the hypothesis.
 6. Save the candidate commit identity.
-7. Run `python3 evaluate.py`.
+7. Run `python3 evaluate.py`. After the first run you should know roughly how
+   long a full evaluation takes. If you can wait on the command, time the first
+   wait around that length so you do not check into a still-running evaluation
+   several times.
 8. Apply the failure or acceptance policy below.
 9. Append one row to `results.tsv`.
 10. Continue from the last kept baseline.

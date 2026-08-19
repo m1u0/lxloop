@@ -34,7 +34,7 @@ TEST_CMD = "./bin/test-backend-ops -b CPU"
 BENCH_CMD = (
     "./bin/llama-bench "
     "-m /data/models/model.gguf "
-    "-p 512 -n 128 -t 64 -b 512 -r 5 -o json"
+    "-p 512 -n 128 -t 64 -b 512 -r 10 -o json"
 )
 
 # Absolute, or relative to the lxloop repository.
